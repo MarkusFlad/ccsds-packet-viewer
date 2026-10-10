@@ -251,6 +251,8 @@ way.
 ```text
 ccsds-packet-viewer/
 ├── Cargo.toml                  workspace
+├── package.sh                  builds the delivery archive in dist/
+├── USAGE.md                    user guide delivered with the tool
 ├── crates/
 │   ├── ccsds-common/           packet, TM and TC frame models, parsers, CRC, packet
 │   │                           extraction from frames, hex formatting (+ unit tests)
@@ -399,47 +401,54 @@ The frame options are only accepted together with `--mode tm-frames` or
 
 ## Delivery
 
-The tool is delivered as one executable plus the directory with the web
-assets. Neither Rust nor wasm-pack is needed on the target computer, only a
-web browser.
+The tool is delivered as one archive containing the executable, the web
+assets, the example files and a user guide. Neither Rust nor wasm-pack is
+needed on the target computer, only a web browser.
 
-1. Build both parts in release mode on a computer with the same operating
-   system and processor architecture as the target computer:
+```sh
+./package.sh
+```
 
-   ```sh
-   wasm-pack build crates/ccsds-web --target web --release --out-dir ../../web/pkg --no-typescript
-   cargo build --release -p ccsds-viewer
-   ```
+The script runs the tests, builds the WebAssembly frontend and the viewer in
+release mode and writes
+`dist/ccsds-viewer-<version>-<platform>.tar.gz`, for example
+`dist/ccsds-viewer-0.1.0-linux-x86_64.tar.gz`. Run it on a
+computer with the same operating system and processor architecture as the
+target computer. It needs `bash` and `tar` in addition to the
+[prerequisites](#prerequisites).
 
-2. Copy these files into the delivery, keeping the layout of the `web`
-   directory:
+Content of the archive:
 
-   ```text
-   ccsds-viewer/
-   ├── ccsds-viewer                from target/release/ (ccsds-viewer.exe on Windows)
-   └── web/
-       ├── index.html              from web/
-       ├── style.css               from web/
-       └── pkg/
-           ├── ccsds_web.js        from web/pkg/
-           └── ccsds_web_bg.wasm   from web/pkg/
-   ```
+```text
+ccsds-viewer-<version>/
+├── ccsds-viewer                from target/release/
+├── USAGE.md                    user guide, from USAGE.md
+├── web/
+│   ├── index.html              from web/
+│   ├── style.css               from web/
+│   └── pkg/
+│       ├── ccsds_web.js        from web/pkg/
+│       └── ccsds_web_bg.wasm   from web/pkg/
+└── examples/                   from data/*.txt
+```
 
-   | File | Needed | Purpose |
-   |------|--------|---------|
-   | `ccsds-viewer` | yes | command line application and web server |
-   | `web/index.html`, `web/style.css` | yes | page skeleton and layout |
-   | `web/pkg/ccsds_web.js`, `web/pkg/ccsds_web_bg.wasm` | yes | WebAssembly frontend and its loader |
-   | `web/pkg/package.json`, `web/pkg/.gitignore` | no | only written by wasm-pack for npm |
-   | `README.md`, `data/*.txt` | optional | documentation and example files |
+The executable and the four files below `web/` are required to run the
+tool; `web/pkg/package.json` and `web/pkg/.gitignore`, which wasm-pack
+writes for npm, are not delivered.
 
-3. On the target computer always pass the web directory with `--web-root`.
-   The built-in default is the absolute path of the `web` directory on the
-   computer where the tool was built and does not exist elsewhere:
+On the target computer the archive is unpacked and the tool is started with
+the web directory given by `--web-root`. The built-in default is the
+absolute path of the `web` directory on the computer where the tool was
+built and does not exist elsewhere:
 
-   ```sh
-   ./ccsds-viewer --web-root ./web <INPUT>
-   ```
+```sh
+tar -xzf ccsds-viewer-<version>-<platform>.tar.gz
+cd ccsds-viewer-<version>
+./ccsds-viewer --web-root ./web examples/example.txt
+```
+
+`USAGE.md` describes the use of the delivered tool for its users; keep it
+up to date when options change.
 
 The Linux executable is linked dynamically against the C library (glibc)
 of the build computer; it runs on systems with the same or a newer glibc
