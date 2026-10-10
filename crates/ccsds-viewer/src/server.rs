@@ -1,7 +1,7 @@
 //! Minimal blocking HTTP server for the web interface.
 //!
 //! Routes:
-//! - `GET /api/packets` - the parsed packet stream as JSON
+//! - `GET /api/stream`  - the parsed stream (packets or TM frames) as JSON
 //! - `GET /<path>`      - static files from the web root (`/` maps to `index.html`)
 
 use std::io;
@@ -10,7 +10,7 @@ use std::path::{Component, Path, PathBuf};
 use tiny_http::{Header, Method, Request, Response, Server};
 
 /// Starts the server and handles requests until the process is terminated.
-pub fn serve(bind: &str, port: u16, web_root: PathBuf, packets_json: String) -> io::Result<()> {
+pub fn serve(bind: &str, port: u16, web_root: PathBuf, stream_json: String) -> io::Result<()> {
     let address = format!("{bind}:{port}");
     let server = Server::http(&address).map_err(io::Error::other)?;
 
@@ -18,7 +18,7 @@ pub fn serve(bind: &str, port: u16, web_root: PathBuf, packets_json: String) -> 
     println!("Web interface: http://{shown_host}:{port}/  (Ctrl+C to stop)");
 
     for request in server.incoming_requests() {
-        if let Err(error) = handle(request, &web_root, &packets_json) {
+        if let Err(error) = handle(request, &web_root, &stream_json) {
             eprintln!("warning: failed to send response: {error}");
         }
     }
@@ -26,7 +26,7 @@ pub fn serve(bind: &str, port: u16, web_root: PathBuf, packets_json: String) -> 
 }
 
 /// Handles a single request.
-fn handle(request: Request, web_root: &Path, packets_json: &str) -> io::Result<()> {
+fn handle(request: Request, web_root: &Path, stream_json: &str) -> io::Result<()> {
     if *request.method() != Method::Get && *request.method() != Method::Head {
         return request.respond(text_response(405, "method not allowed"));
     }
@@ -35,8 +35,8 @@ fn handle(request: Request, web_root: &Path, packets_json: &str) -> io::Result<(
     let url = request.url().to_string();
     let path = url.split(['?', '#']).next().unwrap_or("/");
 
-    if path == "/api/packets" {
-        let response = Response::from_string(packets_json)
+    if path == "/api/stream" {
+        let response = Response::from_string(stream_json)
             .with_header(content_type("application/json; charset=utf-8"))
             .with_header(no_cache());
         return request.respond(response);

@@ -20,6 +20,7 @@ version = "0.3"
 features = [
   "Window",
   "Document",
+  "DomTokenList",
   "Element",
   "HtmlElement",
   "Node",
@@ -29,4 +30,7 @@ features = [
   "MouseEvent",
   "Response",
   "CssStyleDeclaration",
+  "KeyboardEvent",
+  "Location",
+  "Text",
 ]

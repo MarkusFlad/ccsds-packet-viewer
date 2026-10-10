@@ -3,13 +3,15 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>CCSDS Packet Viewer</title>
+  <title>CCSDS Viewer</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header class="page-header">
-    <h1>CCSDS Space Packet Viewer</h1>
-    <p id="summary" class="summary">Loading packets&hellip;</p>
+    <h1>CCSDS Space Packet &amp; TM Frame Viewer</h1>
+    <!-- Link back to the frame on the packet page (filled by WebAssembly). -->
+    <h2 id="heading" class="heading" hidden></h2>
+    <p id="summary" class="summary">Loading data&hellip;</p>
   </header>
 
   <!-- Filled by the WebAssembly module (crates/ccsds-web). -->

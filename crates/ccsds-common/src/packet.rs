@@ -167,27 +167,31 @@ impl PacketStream {
         let (bytes, hex_error) = parse_hex_text(text);
         let mut stream = parse_packet_stream(source, &bytes);
         if let Some(hex_error) = hex_error {
-            stream.attach_hex_error(&hex_error, bytes.len());
+            merge_hex_error(&mut stream.invalid, &hex_error, bytes.len());
         }
         stream
     }
+}
 
-    /// Merges an input text error into the stream result. The text error
-    /// truncates the byte stream, so either the packet at the end of the
-    /// stream is reported as invalid, or (if the stream ended cleanly) a new
-    /// invalid entry is created at the end of the stream.
-    fn attach_hex_error(&mut self, error: &HexParseError, stream_len: usize) {
-        match &mut self.invalid {
-            Some(invalid) => {
-                invalid.reason = format!("{}; input text: {}", invalid.reason, error);
-            }
-            None => {
-                self.invalid = Some(InvalidData {
-                    offset: stream_len,
-                    reason: format!("input text: {error}"),
-                    remaining_len: 0,
-                });
-            }
+/// Merges an input text error into a stream result. The text error
+/// truncates the byte stream, so either the item at the end of the stream is
+/// already reported as invalid (the reason is extended), or the stream ended
+/// cleanly and a new invalid entry is created at the end of the stream.
+pub(crate) fn merge_hex_error(
+    invalid: &mut Option<InvalidData>,
+    error: &HexParseError,
+    stream_len: usize,
+) {
+    match invalid {
+        Some(invalid) => {
+            invalid.reason = format!("{}; input text: {}", invalid.reason, error);
+        }
+        None => {
+            *invalid = Some(InvalidData {
+                offset: stream_len,
+                reason: format!("input text: {error}"),
+                remaining_len: 0,
+            });
         }
     }
 }

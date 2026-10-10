@@ -1,4 +1,4 @@
-/* CCSDS Space Packet Viewer - styles for overview and detail view.
+/* CCSDS Viewer - styles for overview and detail view.
  *
  * Frames are drawn with the "grid gap" technique: a grid container has the
  * line color as background and 1px gaps, every cell has the page background.
@@ -17,6 +17,9 @@
   --error: #c62828;
   --error-bg: #fdecea;
   --shadow: 0 10px 30px rgba(20, 30, 50, 0.28);
+  --link: #1a5fb4;
+  --run-a: #dcefd8;
+  --run-b: #fbe8c8;
   --mono: ui-monospace, "SFMono-Regular", "Cascadia Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
@@ -34,6 +37,9 @@
     --error: #ef5350;
     --error-bg: #3a1d1d;
     --shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+    --link: #78aeed;
+    --run-a: #24402a;
+    --run-b: #4a3b20;
   }
 }
 
@@ -50,6 +56,8 @@ body {
 
 .page-header h1 { margin: 0 0 4px; font-size: 1.3rem; }
 .summary { margin: 0 0 16px; color: var(--muted); }
+.heading { margin: 6px 0 4px; font-size: 1.05rem; }
+.heading a { color: var(--link); }
 .summary.error { color: var(--error); font-weight: 600; }
 
 /* ---------- Overview ---------- */
@@ -70,11 +78,13 @@ body {
 }
 
 .packet {
+  /* Number of columns (sections) is set by the WebAssembly code. */
   grid-template-columns: auto auto;
   cursor: default;
 }
 
 .packet:hover { outline: 2px solid var(--line); outline-offset: 1px; }
+.packet { cursor: pointer; }
 
 .cell {
   background: var(--bg);
@@ -129,13 +139,19 @@ body {
   pointer-events: none;
   /* Keep the natural width even close to the right window edge. */
   width: max-content;
+  /* Wide detail views are scaled down from the top left corner. */
+  transform-origin: top left;
   box-shadow: var(--shadow);
 }
 .detail-popup[hidden] { display: none; }
 
-.detail {
-  grid-template-columns: repeat(7, minmax(5.5rem, max-content)) minmax(8rem, max-content);
+/* Pinned by a click: stays open and its links can be used. */
+.detail-popup.pinned {
+  pointer-events: auto;
+  outline: 3px solid var(--link);
 }
+
+/* Number of columns is set by the WebAssembly code (one per field). */
 
 .detail .cell {
   display: flex;
@@ -147,12 +163,42 @@ body {
 .group-value { font-family: var(--mono); }
 
 .field-name {
-  font-size: 0.85rem;
-  max-width: 9rem;
+  font-size: 0.8rem;
   line-height: 1.25;
+  align-items: center;
 }
+/* Long field names wrap inside this width; the cell itself fills the column. */
+.field-name .label { display: block; max-width: 6rem; }
+
+/* Titles in the detail view may wrap, to keep wide views (TM frames) compact. */
+.detail .section-title,
+.detail .group-title { white-space: normal; }
 
 .field-value { font-family: var(--mono); gap: 2px; }
 .field-value .hexval { color: var(--muted); }
+.field-value .note { font-family: var(--sans); font-size: 0.75rem; color: var(--muted); }
+.field-value .note.bad { color: var(--error); font-weight: 600; }
 
 .detail .data-hex { justify-content: center; }
+/* 12 octets per line in the detail view: 12 * 3 - 1 = 35 characters. */
+.detail .data-hex { max-width: 35ch; }
+.detail .field-value { align-items: center; }
+
+/* ---------- Packets inside a TM frame data field ---------- */
+
+.runs-text { line-height: 1.7; }
+.run { border-radius: 3px; padding: 1px 0; }
+.run.pkt-a { background: var(--run-a); }
+.run.pkt-b { background: var(--run-b); }
+/* Bar in front of the octets where a packet header starts. */
+.run.start { box-shadow: inset 3px 0 0 var(--line); padding-left: 4px; }
+.run.idle,
+.run.unassigned { color: var(--muted); }
+a.run { color: inherit; text-decoration: none; }
+/* In a pinned detail view the packet parts become visible links when the
+   mouse is over the data field. */
+.detail-popup.pinned .data-hex.runs:hover a.run {
+  color: var(--link);
+  text-decoration: underline;
+  cursor: pointer;
+}
