@@ -184,7 +184,7 @@ body {
 .detail .data-hex { max-width: 35ch; }
 .detail .field-value { align-items: center; }
 
-/* ---------- Packets inside a TM frame data field ---------- */
+/* ---------- Packets inside a frame data field ---------- */
 
 .runs-text { line-height: 1.7; }
 .run { border-radius: 3px; padding: 1px 0; }
@@ -193,6 +193,7 @@ body {
 /* Bar in front of the octets where a packet header starts. */
 .run.start { box-shadow: inset 3px 0 0 var(--line); padding-left: 4px; }
 .run.idle,
+.run.control,
 .run.unassigned { color: var(--muted); }
 a.run { color: inherit; text-decoration: none; }
 /* In a pinned detail view the packet parts become visible links when the

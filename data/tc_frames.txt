@@ -1,0 +1,36 @@
+# CCSDS TC Transfer Frames as hex bytes, separated by whitespace.
+# Spacecraft ID 42, Segment Header and Frame Error Control Field present.
+# Run: ccsds-viewer --mode tc-frames --segment-header --fecf data/tc_frames.txt
+
+# VC 1, BC frame: control command Unlock (no Segment Header)
+30 2a 04 07 00 00 20 e7
+
+# VC 1, BC frame: control command Set V(R) = 0 (no Segment Header)
+30 2a 04 09 00 82 00 00 11 bd
+
+# VC 1, AD frame N(S)=0, MAP 1, unsegmented: two complete packets
+00 2a 04 1f 00 c1 18 64 c0 05 00 07 21 11 01 00
+2a 00 00 01 18 2f c0 06 00 03 de ad be ef 92 9b
+
+# VC 1, AD frame N(S)=1, MAP 1, first segment of the packet APID=1234
+00 2a 04 1f 01 41 1c d2 c1 2c 00 3b 10 11 12 13
+14 15 16 17 18 19 1a 1b 1c 1d 1e 1f 20 21 89 59
+
+# VC 1, AD frame N(S)=2, MAP 2, unsegmented: one packet of another MAP in between
+00 2a 04 0e 02 c2 19 23 ff ff 00 00 42 ef 18
+
+# VC 1, AD frame N(S)=3, MAP 1, continuing segment
+00 2a 04 1f 03 01 22 23 24 25 26 27 28 29 2a 2b
+2c 2d 2e 2f 30 31 32 33 34 35 36 37 38 39 da 91
+
+# VC 1, AD frame N(S)=4, MAP 1, last segment
+00 2a 04 19 04 81 3a 3b 3c 3d 3e 3f 40 41 42 43
+44 45 46 47 48 49 4a 4b 32 a3
+
+# VC 2, BD frame (expedited), MAP 3, unsegmented: one packet
+20 2a 08 19 00 c3 19 2c c0 11 00 0b 30 31 32 33
+34 35 36 37 38 39 3a 3b 76 48
+
+# VC 1, AD frame N(S)=5: one bit flipped -> FECF mismatch, shown as 'No valid Frame-Data'
+00 2a 04 17 05 c1 18 2f c0 47 00 09 00 01 02 03
+04 05 06 07 08 09 bd 7d

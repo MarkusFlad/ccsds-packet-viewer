@@ -1,10 +1,12 @@
 //! The content delivered from the command line application to the web
-//! frontend: either a stream of Space Packets or a stream of TM frames.
+//! frontend: a stream of Space Packets, of TM frames or of TC frames.
 
 use serde::{Deserialize, Serialize};
 
-use crate::frame::FrameStream;
+use crate::extract::PacketExtraction;
+use crate::frame::{FrameStream, SdlsConfig};
 use crate::packet::{InvalidData, PacketStream};
+use crate::tc_frame::TcFrameStream;
 
 /// A parsed input stream of one of the supported kinds.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -14,6 +16,8 @@ pub enum Stream {
     Packets(PacketStream),
     /// CCSDS TM Transfer Frames (CCSDS 132.0-B).
     TmFrames(FrameStream),
+    /// CCSDS TC Transfer Frames (CCSDS 232.0-B).
+    TcFrames(TcFrameStream),
 }
 
 impl Stream {
@@ -22,6 +26,7 @@ impl Stream {
         match self {
             Stream::Packets(stream) => &stream.source,
             Stream::TmFrames(stream) => &stream.source,
+            Stream::TcFrames(stream) => &stream.source,
         }
     }
 
@@ -30,6 +35,7 @@ impl Stream {
         match self {
             Stream::Packets(stream) => stream.packets.len(),
             Stream::TmFrames(stream) => stream.frames.len(),
+            Stream::TcFrames(stream) => stream.frames.len(),
         }
     }
 
@@ -43,6 +49,7 @@ impl Stream {
         match self {
             Stream::Packets(_) => "packet(s)",
             Stream::TmFrames(_) => "TM frame(s)",
+            Stream::TcFrames(_) => "TC frame(s)",
         }
     }
 
@@ -50,8 +57,32 @@ impl Stream {
     pub fn invalid_text(&self) -> &'static str {
         match self {
             Stream::Packets(_) => "No valid Packet-Data",
-            Stream::TmFrames(_) => "No valid Frame-Data",
+            Stream::TmFrames(_) | Stream::TcFrames(_) => "No valid Frame-Data",
         }
+    }
+
+    /// Space Packets extracted from the frame data fields (frame streams
+    /// only).
+    pub fn extraction(&self) -> Option<&PacketExtraction> {
+        match self {
+            Stream::Packets(_) => None,
+            Stream::TmFrames(stream) => Some(&stream.extraction),
+            Stream::TcFrames(stream) => Some(&stream.extraction),
+        }
+    }
+
+    /// Space Data Link Security Protocol parameters, if configured.
+    pub fn sdls(&self) -> Option<&SdlsConfig> {
+        match self {
+            Stream::Packets(_) => None,
+            Stream::TmFrames(stream) => stream.config.sdls.as_ref(),
+            Stream::TcFrames(stream) => stream.config.sdls.as_ref(),
+        }
+    }
+
+    /// `true` if the frame data fields are encrypted.
+    pub fn is_encrypted(&self) -> bool {
+        self.sdls().is_some_and(|sdls| sdls.encrypted)
     }
 
     /// The first invalid item, if any.
@@ -59,6 +90,7 @@ impl Stream {
         match self {
             Stream::Packets(stream) => stream.invalid.as_ref(),
             Stream::TmFrames(stream) => stream.invalid.as_ref(),
+            Stream::TcFrames(stream) => stream.invalid.as_ref(),
         }
     }
 }

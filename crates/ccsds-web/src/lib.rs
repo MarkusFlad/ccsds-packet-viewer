@@ -1,6 +1,6 @@
 //! WebAssembly frontend of the CCSDS viewer.
 //!
-//! On start-up the module fetches the parsed stream (Space Packets or TM
+//! On start-up the module fetches the parsed stream (Space Packets, TM or TC
 //! Transfer Frames) from `api/stream` and renders the page selected by the
 //! URL hash (see [`pages::Route`]).
 //!
@@ -8,7 +8,7 @@
 //! - Hovering over an item shows its detail view as a preview.
 //! - Clicking an item pins the detail view: it stays open and its links can
 //!   be clicked. A click outside or the Escape key closes it.
-//! - In a pinned TM frame detail view, the packets in the data field are
+//! - In a pinned frame detail view, the packets in the data field are
 //!   links to the page with the Space Packets of that frame; the heading of
 //!   that page links back to the frame.
 //!
@@ -20,6 +20,7 @@ mod frame_view;
 mod layout;
 mod packet_view;
 mod pages;
+mod tc_frame_view;
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;

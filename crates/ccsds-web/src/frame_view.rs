@@ -1,7 +1,8 @@
 //! Views of a CCSDS TM Transfer Frame.
 
 use ccsds_common::{
-    format_hex_value, FrameStream, SpanKind, TmFrame, TmPrimaryHeader, TmSecondaryHeader,
+    format_hex_value, Fecf, FrameStream, PacketExtraction, SpanKind, TmFrame, TmPrimaryHeader,
+    TmSecondaryHeader,
 };
 
 use crate::layout::{
@@ -78,7 +79,12 @@ pub fn detail(stream: &FrameStream, frame_index: usize) -> DetailLayout {
 
     sections.push(DetailSection {
         title: DATA_FIELD,
-        content: SectionContent::Value(data_field_value(stream, frame_index)),
+        content: SectionContent::Value(data_field_value(
+            &frame.data,
+            &stream.extraction,
+            frame_index,
+            |first| stream.frames[first].identification(),
+        )),
     });
 
     if let Some(security) = &frame.security_trailer {
@@ -101,33 +107,36 @@ pub fn detail(stream: &FrameStream, frame_index: usize) -> DetailLayout {
     }
 }
 
-/// The data field divided into the packets it contains. Packet parts link
-/// to the packet page of the frame in which the packet starts.
-fn data_field_value(stream: &FrameStream, frame_index: usize) -> Value {
-    let frame = &stream.frames[frame_index];
-    let extraction = &stream.extraction;
+/// The data field of the frame with the given index, divided into the
+/// packets it contains. Packet parts link to the packet page of the frame in
+/// which the packet starts; `identification` describes that frame.
+pub(crate) fn data_field_value(
+    data: &[u8],
+    extraction: &PacketExtraction,
+    frame_index: usize,
+    identification: impl Fn(usize) -> String,
+) -> Value {
     let Some(spans) = extraction.frame_spans.get(frame_index) else {
-        return Value::Bytes(frame.data.clone());
+        return Value::Bytes(data.to_vec());
     };
 
     let runs = spans
         .iter()
         .map(|span| {
-            let bytes = frame.data[span.start..span.start + span.len].to_vec();
+            let bytes = data[span.start..span.start + span.len].to_vec();
             match span.kind {
                 SpanKind::Packet {
                     packet,
                     starts_here,
                 } => {
                     let extracted = &extraction.packets[packet];
-                    let first = &stream.frames[extracted.first_frame];
                     let mut tooltip = if starts_here {
                         format!("{}: starts here", extracted.title())
                     } else {
                         format!(
                             "{}: continued from frame {}",
                             extracted.title(),
-                            first.identification()
+                            identification(extracted.first_frame)
                         )
                     };
                     if let Some(error) = &extracted.error {
@@ -151,6 +160,12 @@ fn data_field_value(stream: &FrameStream, frame_index: usize) -> Value {
                     href: None,
                     class: "idle",
                     tooltip: "idle data".to_string(),
+                },
+                SpanKind::Control => ByteRun {
+                    bytes,
+                    href: None,
+                    class: "control",
+                    tooltip: "control command".to_string(),
                 },
                 SpanKind::Unassigned => ByteRun {
                     bytes,
@@ -288,19 +303,26 @@ fn trailer_items(frame: &TmFrame) -> Vec<Item> {
         )));
     }
     if let Some(fecf) = frame.fecf {
-        let value = Value::number(fecf.value.into(), ccsds_common::Fecf::BITS);
-        let value = if fecf.is_ok() {
-            value.with_note("CRC ok", false)
-        } else {
-            value.with_note(
-                format!(
-                    "CRC error, computed {}",
-                    format_hex_value(fecf.computed.into(), ccsds_common::Fecf::BITS)
-                ),
-                true,
-            )
-        };
-        items.push(Item::Field(Field::new("Frame Error Control Field", value)));
+        items.push(Item::Field(Field::new(
+            "Frame Error Control Field",
+            fecf_value(fecf),
+        )));
     }
     items
+}
+
+/// The Frame Error Control Field with the result of the CRC check.
+pub(crate) fn fecf_value(fecf: Fecf) -> Value {
+    let value = Value::number(fecf.value.into(), Fecf::BITS);
+    if fecf.is_ok() {
+        value.with_note("CRC ok", false)
+    } else {
+        value.with_note(
+            format!(
+                "CRC error, computed {}",
+                format_hex_value(fecf.computed.into(), Fecf::BITS)
+            ),
+            true,
+        )
+    }
 }

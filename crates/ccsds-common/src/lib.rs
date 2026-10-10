@@ -1,7 +1,8 @@
 //! Shared building blocks for the CCSDS Space Packet viewer.
 //!
-//! Supported inputs: CCSDS Space Packets ([`packet`]) and CCSDS TM Transfer
-//! Frames ([`frame`]); [`Stream`] wraps either of them.
+//! Supported inputs: CCSDS Space Packets ([`packet`]), CCSDS TM Transfer
+//! Frames ([`frame`]) and CCSDS TC Transfer Frames ([`tc_frame`]);
+//! [`Stream`] wraps any of them.
 //!
 //! This crate is used by both the native command line application (which
 //! parses the input file) and the WebAssembly frontend (which renders the
@@ -28,8 +29,11 @@ pub mod frame;
 pub mod hex;
 pub mod packet;
 pub mod stream;
+pub mod tc_frame;
 
-pub use extract::{extract_packets, DataSpan, ExtractedPacket, PacketExtraction, SpanKind};
+pub use extract::{
+    extract_packets, extract_tc_packets, DataSpan, ExtractedPacket, PacketExtraction, SpanKind,
+};
 pub use frame::{
     parse_frame_stream, Fecf, FrameStream, SdlsConfig, TmFrame, TmFrameConfig, TmPrimaryHeader,
     TmSecondaryHeader, DEFAULT_ASM,
@@ -40,3 +44,6 @@ pub use packet::{
     SpacePacket, PRIMARY_HEADER_LEN,
 };
 pub use stream::Stream;
+pub use tc_frame::{
+    parse_tc_frame_stream, TcFrame, TcFrameConfig, TcFrameStream, TcPrimaryHeader, TcSegmentHeader,
+};

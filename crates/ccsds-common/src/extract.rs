@@ -17,6 +17,12 @@
 //! - a First Header Pointer that contradicts the packet in progress.
 //!
 //! After an interruption, extraction resumes at the next First Header Pointer.
+//!
+//! TC Transfer Frames (CCSDS 232.0-B-4) are handled by
+//! [`extract_tc_packets`]: without Segment Header every data field contains
+//! complete packets; with Segment Header a packet may be divided into
+//! segments, which are reassembled per Multiplexer Access Point using the
+//! Sequence Flags.
 
 use std::collections::HashMap;
 
@@ -24,6 +30,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::frame::{TmFrame, FHP_IDLE_DATA, FHP_NO_PACKET_START};
 use crate::packet::{PrimaryHeader, SpacePacket, PRIMARY_HEADER_LEN};
+use crate::tc_frame::{TcFrame, TcSegmentHeader};
 
 /// What a part of a frame data field belongs to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -36,6 +43,8 @@ pub enum SpanKind {
     },
     /// Idle data (First Header Pointer `0x7fe`).
     Idle,
+    /// Control commands of a TC frame (Control Command Flag 1).
+    Control,
     /// Data that cannot be assigned to a packet (e.g. the continuation of a
     /// packet whose start was not received).
     Unassigned,
@@ -174,6 +183,214 @@ fn abort(packets: &mut [ExtractedPacket], state: &mut ChannelState, reason: Stri
     }
 }
 
+/// Starts new packets at `pos` of a data field, one after the other up to
+/// its end. Returns the index of the last packet if it is not complete at
+/// the end of the data field. `data_offset` is the byte offset of the data
+/// field in the input stream.
+fn start_packets(
+    packets: &mut Vec<ExtractedPacket>,
+    spans: &mut Vec<DataSpan>,
+    frame_index: usize,
+    data: &[u8],
+    mut pos: usize,
+    data_offset: usize,
+) -> Option<usize> {
+    let len = data.len();
+    while pos < len {
+        let index = packets.len();
+        packets.push(ExtractedPacket {
+            first_frame: frame_index,
+            frames: vec![frame_index],
+            packet: None,
+            error: None,
+            bytes: Vec::new(),
+            offset: data_offset + pos,
+        });
+        let taken = feed(&mut packets[index], &data[pos..]);
+        spans.push(DataSpan {
+            start: pos,
+            len: taken,
+            kind: SpanKind::Packet {
+                packet: index,
+                starts_here: true,
+            },
+        });
+        pos += taken;
+
+        if !has_valid_version(&packets[index].bytes) {
+            let version = packets[index].bytes[0] >> 5;
+            packets[index].error = Some(format!(
+                "unsupported Packet Version Number {version} (expected 0)"
+            ));
+            packets[index].bytes = Vec::new();
+            if pos < len {
+                spans.push(DataSpan {
+                    start: pos,
+                    len: len - pos,
+                    kind: SpanKind::Unassigned,
+                });
+            }
+            return None;
+        }
+        if octets_needed(&packets[index].bytes) == 0 {
+            finish(&mut packets[index]);
+        } else {
+            return Some(index);
+        }
+    }
+    None
+}
+
+/// Extracts the Space Packets contained in the given TC frames.
+///
+/// Frames without Segment Header and frames with Sequence Flags
+/// "unsegmented" contain complete packets. A frame with Sequence Flags
+/// "first segment" starts a packet that is continued by the following
+/// "continuing" and "last" segments of the same Multiplexer Access Point
+/// (Spacecraft ID + Virtual Channel ID + MAP ID).
+///
+/// The reassembly is interrupted (the packet in progress is reported as
+/// incomplete) by
+/// - a gap in the Frame Sequence Number of the sequence controlled (Type-A)
+///   frames of the virtual channel,
+/// - a frame with a FECF mismatch (only possible with `--ignore-crc`),
+/// - a new packet start or a "last segment" before the packet is complete.
+///
+/// The data fields of frames with control commands are not searched.
+pub fn extract_tc_packets(frames: &[TcFrame]) -> PacketExtraction {
+    let mut packets: Vec<ExtractedPacket> = Vec::new();
+    let mut frame_spans: Vec<Vec<DataSpan>> = vec![Vec::new(); frames.len()];
+    let mut channels: HashMap<(u16, u8, u8), ChannelState> = HashMap::new();
+    // Frame Sequence Number of the previous Type-A frame per virtual channel.
+    let mut sequence_numbers: HashMap<(u16, u8), u8> = HashMap::new();
+
+    for (frame_index, frame) in frames.iter().enumerate() {
+        let header = &frame.header;
+        let virtual_channel = (header.spacecraft_id, header.virtual_channel_id);
+        let spans = &mut frame_spans[frame_index];
+        let data = &frame.data;
+        let len = data.len();
+        let whole = |kind| DataSpan {
+            start: 0,
+            len,
+            kind,
+        };
+
+        if header.is_control() {
+            // Control commands may set a new expected sequence number.
+            sequence_numbers.remove(&virtual_channel);
+            spans.push(whole(SpanKind::Control));
+            continue;
+        }
+
+        // Continuity of the sequence controlled frames.
+        if header.bypass_flag == 0 {
+            let number = header.frame_sequence_number;
+            if let Some(last) = sequence_numbers.insert(virtual_channel, number) {
+                let expected = last.wrapping_add(1);
+                if number != expected {
+                    let affected = channels
+                        .iter_mut()
+                        .filter(|((scid, vcid, _), _)| (*scid, *vcid) == virtual_channel);
+                    for (_, state) in affected {
+                        abort(
+                            &mut packets,
+                            state,
+                            format!("Frame Sequence Number gap: expected {expected}, got {number}"),
+                        );
+                    }
+                }
+            }
+        }
+
+        let map_id = frame.segment_header.map_or(0, |segment| segment.map_id);
+        let state = channels
+            .entry((virtual_channel.0, virtual_channel.1, map_id))
+            .or_default();
+
+        if frame.fecf.is_some_and(|fecf| !fecf.is_ok()) {
+            abort(&mut packets, state, "frame with FECF mismatch".to_string());
+            spans.push(whole(SpanKind::Unassigned));
+            continue;
+        }
+
+        let sequence_flags = frame
+            .segment_header
+            .map_or(TcSegmentHeader::UNSEGMENTED, |segment| {
+                segment.sequence_flags
+            });
+        match sequence_flags {
+            TcSegmentHeader::FIRST | TcSegmentHeader::UNSEGMENTED => {
+                abort(
+                    &mut packets,
+                    state,
+                    "next packet starts before this packet is complete".to_string(),
+                );
+                state.pending = start_packets(
+                    &mut packets,
+                    spans,
+                    frame_index,
+                    data,
+                    0,
+                    frame.data_offset(),
+                );
+                if sequence_flags == TcSegmentHeader::UNSEGMENTED {
+                    abort(
+                        &mut packets,
+                        state,
+                        "packet exceeds the Transfer Frame Data Field".to_string(),
+                    );
+                }
+            }
+            _ => {
+                let Some(index) = state.pending else {
+                    spans.push(whole(SpanKind::Unassigned));
+                    continue;
+                };
+                let taken = feed(&mut packets[index], data);
+                if taken > 0 {
+                    spans.push(DataSpan {
+                        start: 0,
+                        len: taken,
+                        kind: SpanKind::Packet {
+                            packet: index,
+                            starts_here: false,
+                        },
+                    });
+                    packets[index].frames.push(frame_index);
+                }
+                if taken < len {
+                    spans.push(DataSpan {
+                        start: taken,
+                        len: len - taken,
+                        kind: SpanKind::Unassigned,
+                    });
+                }
+                if octets_needed(&packets[index].bytes) == 0 {
+                    finish(&mut packets[index]);
+                    state.pending = None;
+                } else if sequence_flags == TcSegmentHeader::LAST {
+                    abort(
+                        &mut packets,
+                        state,
+                        "last segment received before the packet is complete".to_string(),
+                    );
+                }
+            }
+        }
+    }
+
+    // Packets still in progress at the end of the stream.
+    for state in channels.values_mut() {
+        abort(&mut packets, state, "stream ends".to_string());
+    }
+
+    PacketExtraction {
+        packets,
+        frame_spans,
+    }
+}
+
 /// Reassembles the Space Packets contained in the given frames.
 pub fn extract_packets(frames: &[TmFrame]) -> PacketExtraction {
     let mut packets: Vec<ExtractedPacket> = Vec::new();
@@ -296,49 +513,14 @@ pub fn extract_packets(frames: &[TmFrame]) -> PacketExtraction {
         pos = first_header;
 
         // Packets starting in this frame.
-        let data_offset = frame.data_offset();
-        while pos < len {
-            let index = packets.len();
-            packets.push(ExtractedPacket {
-                first_frame: frame_index,
-                frames: vec![frame_index],
-                packet: None,
-                error: None,
-                bytes: Vec::new(),
-                offset: data_offset + pos,
-            });
-            let taken = feed(&mut packets[index], &data[pos..]);
-            spans.push(DataSpan {
-                start: pos,
-                len: taken,
-                kind: SpanKind::Packet {
-                    packet: index,
-                    starts_here: true,
-                },
-            });
-            pos += taken;
-
-            if !has_valid_version(&packets[index].bytes) {
-                let version = packets[index].bytes[0] >> 5;
-                packets[index].error = Some(format!(
-                    "unsupported Packet Version Number {version} (expected 0)"
-                ));
-                packets[index].bytes = Vec::new();
-                if pos < len {
-                    spans.push(DataSpan {
-                        start: pos,
-                        len: len - pos,
-                        kind: SpanKind::Unassigned,
-                    });
-                }
-                break;
-            }
-            if octets_needed(&packets[index].bytes) == 0 {
-                finish(&mut packets[index]);
-            } else {
-                state.pending = Some(index);
-            }
-        }
+        state.pending = start_packets(
+            &mut packets,
+            spans,
+            frame_index,
+            data,
+            pos,
+            frame.data_offset(),
+        );
     }
 
     // Packets still in progress at the end of the stream.
@@ -400,6 +582,136 @@ mod tests {
 
     fn concat(parts: &[Vec<u8>]) -> Vec<u8> {
         parts.concat()
+    }
+
+    /// TC frame of VC 1; `segment` = (Sequence Flags, MAP ID).
+    fn tc_frame(
+        bypass: u8,
+        control: u8,
+        seq: u8,
+        segment: Option<(u8, u8)>,
+        data: Vec<u8>,
+    ) -> TcFrame {
+        TcFrame {
+            offset: 0,
+            header_bytes: vec![0; 5],
+            header: crate::tc_frame::TcPrimaryHeader {
+                version: 0,
+                bypass_flag: bypass,
+                control_command_flag: control,
+                spare: 0,
+                spacecraft_id: 42,
+                virtual_channel_id: 1,
+                frame_length: 0,
+                frame_sequence_number: seq,
+            },
+            segment_header: segment.map(|(sequence_flags, map_id)| TcSegmentHeader {
+                sequence_flags,
+                map_id,
+            }),
+            security_header: None,
+            data,
+            security_trailer: None,
+            fecf: None,
+        }
+    }
+
+    #[test]
+    fn tc_frames_without_segment_header_contain_complete_packets() {
+        let f0 = tc_frame(0, 0, 0, None, concat(&[packet(1, 4), packet(2, 6)]));
+        let f1 = tc_frame(0, 0, 1, None, packet(3, 8)[..10].to_vec());
+        let ex = extract_tc_packets(&[f0, f1]);
+        assert_eq!(ex.packets.len(), 3);
+        assert_eq!(ex.complete_count(), 2);
+        assert_eq!(ex.packets_starting_in(0).count(), 2);
+        assert!(ex.packets[2]
+            .error
+            .as_ref()
+            .unwrap()
+            .contains("exceeds the Transfer Frame Data Field"));
+    }
+
+    #[test]
+    fn tc_segments_are_reassembled_per_map() {
+        let a = packet(1, 30);
+        let b = packet(2, 4);
+        let frames = [
+            tc_frame(0, 0, 0, Some((TcSegmentHeader::FIRST, 1)), a[..12].to_vec()),
+            // Another MAP in between does not disturb the reassembly.
+            tc_frame(0, 0, 1, Some((TcSegmentHeader::UNSEGMENTED, 2)), b.clone()),
+            tc_frame(
+                0,
+                0,
+                2,
+                Some((TcSegmentHeader::CONTINUING, 1)),
+                a[12..24].to_vec(),
+            ),
+            tc_frame(0, 0, 3, Some((TcSegmentHeader::LAST, 1)), a[24..].to_vec()),
+        ];
+        let ex = extract_tc_packets(&frames);
+        assert_eq!(ex.complete_count(), 2);
+        let first = &ex.packets[0];
+        assert_eq!(first.first_frame, 0);
+        assert_eq!(first.frames, vec![0, 2, 3]);
+        assert_eq!(first.packet.as_ref().unwrap().data.len(), 30);
+        assert_eq!(ex.packets[1].frames, vec![1]);
+        assert_eq!(
+            ex.frame_spans[3][0].kind,
+            SpanKind::Packet {
+                packet: 0,
+                starts_here: false
+            }
+        );
+    }
+
+    #[test]
+    fn tc_sequence_gap_interrupts_reassembly() {
+        let a = packet(1, 30);
+        let frames = [
+            tc_frame(0, 0, 0, Some((TcSegmentHeader::FIRST, 1)), a[..12].to_vec()),
+            tc_frame(0, 0, 2, Some((TcSegmentHeader::LAST, 1)), a[24..].to_vec()),
+        ];
+        let ex = extract_tc_packets(&frames);
+        assert_eq!(ex.complete_count(), 0);
+        assert!(ex.packets[0]
+            .error
+            .as_ref()
+            .unwrap()
+            .contains("Frame Sequence Number gap"));
+        assert_eq!(ex.frame_spans[1][0].kind, SpanKind::Unassigned);
+    }
+
+    #[test]
+    fn tc_last_segment_must_complete_the_packet() {
+        let a = packet(1, 30);
+        let frames = [
+            tc_frame(1, 0, 0, Some((TcSegmentHeader::FIRST, 1)), a[..12].to_vec()),
+            tc_frame(
+                1,
+                0,
+                0,
+                Some((TcSegmentHeader::LAST, 1)),
+                a[12..20].to_vec(),
+            ),
+        ];
+        let ex = extract_tc_packets(&frames);
+        assert!(ex.packets[0]
+            .error
+            .as_ref()
+            .unwrap()
+            .contains("last segment"));
+    }
+
+    #[test]
+    fn tc_control_frames_are_not_searched() {
+        let frames = [
+            tc_frame(1, 1, 0, None, vec![0x00]),
+            tc_frame(0, 0, 0, None, packet(1, 4)),
+        ];
+        let ex = extract_tc_packets(&frames);
+        assert_eq!(ex.frame_spans[0][0].kind, SpanKind::Control);
+        assert_eq!(ex.complete_count(), 1);
+        assert_eq!(ex.packets[0].first_frame, 1);
     }
 
     #[test]

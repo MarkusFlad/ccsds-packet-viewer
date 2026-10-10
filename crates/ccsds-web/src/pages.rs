@@ -6,11 +6,11 @@
 //! | `#/frame/3`           | frame overview with the detail view of frame 3 pinned  |
 //! | `#/frame/3/packets`   | Space Packets starting in frame 3                      |
 
-use ccsds_common::{FrameStream, Stream};
+use ccsds_common::{PacketExtraction, Stream};
 
 use crate::frame_view::{self, frame_href};
 use crate::layout::{DetailLayout, OverviewBox};
-use crate::packet_view;
+use crate::{packet_view, tc_frame_view};
 
 /// A page of the viewer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -60,7 +60,26 @@ pub struct PageModel {
 pub fn build(stream: &Stream, route: Route) -> PageModel {
     match (stream, route) {
         (Stream::TmFrames(frames), Route::FramePackets(index)) if index < frames.frames.len() => {
-            frame_packets_page(frames, index)
+            frame_packets_page(
+                &frames.source,
+                &frames.extraction,
+                format!(
+                    "TM Transfer Frame {}",
+                    frames.frames[index].identification()
+                ),
+                index,
+            )
+        }
+        (Stream::TcFrames(frames), Route::FramePackets(index)) if index < frames.frames.len() => {
+            frame_packets_page(
+                &frames.source,
+                &frames.extraction,
+                format!(
+                    "TC Transfer Frame {}",
+                    frames.frames[index].identification()
+                ),
+                index,
+            )
         }
         (_, Route::Overview { pin }) => overview_page(stream, pin),
         (_, Route::FramePackets(_)) => overview_page(stream, None),
@@ -80,6 +99,14 @@ fn overview_page(stream: &Stream, pin: Option<usize>) -> PageModel {
                 (
                     frame_view::overview(&frames.frames[index]),
                     frame_view::detail(frames, index),
+                )
+            })
+            .unzip(),
+        Stream::TcFrames(frames) => (0..frames.frames.len())
+            .map(|index| {
+                (
+                    tc_frame_view::overview(&frames.frames[index]),
+                    tc_frame_view::detail(frames, index),
                 )
             })
             .unzip(),
@@ -119,17 +146,26 @@ fn overview_summary(stream: &Stream) -> String {
         if config.asm.is_some() {
             text.push_str(", ASM");
         }
-        if config.sdls.is_some() {
-            text.push_str(", SDLS");
+    }
+    if let Stream::TcFrames(frames) = stream {
+        let config = &frames.config;
+        if config.segment_header {
+            text.push_str(", Segment Header");
         }
-        if matches!(&config.sdls, Some(sdls) if sdls.encrypted) {
-            text.push_str(", data fields encrypted");
-        } else {
-            text.push_str(&format!(
-                ", {} Space Packet(s) extracted",
-                frames.extraction.complete_count()
-            ));
+        if config.fecf_present {
+            text.push_str(", FECF");
         }
+    }
+    if stream.sdls().is_some() {
+        text.push_str(", SDLS");
+    }
+    if stream.is_encrypted() {
+        text.push_str(", data fields encrypted");
+    } else if let Some(extraction) = stream.extraction() {
+        text.push_str(&format!(
+            ", {} Space Packet(s) extracted",
+            extraction.complete_count()
+        ));
     }
     if let Some(invalid) = stream.invalid() {
         text.push_str(&format!(", invalid data at byte offset {}", invalid.offset));
@@ -141,9 +177,13 @@ fn overview_summary(stream: &Stream) -> String {
 /// Space Packets whose header starts in the given frame. Packets continuing
 /// in later frames are shown completely. The first packet that could not be
 /// reassembled is shown as invalid.
-fn frame_packets_page(stream: &FrameStream, frame_index: usize) -> PageModel {
-    let frame = &stream.frames[frame_index];
-    let starting: Vec<_> = stream.extraction.packets_starting_in(frame_index).collect();
+fn frame_packets_page(
+    source: &str,
+    extraction: &PacketExtraction,
+    frame_title: String,
+    frame_index: usize,
+) -> PageModel {
+    let starting: Vec<_> = extraction.packets_starting_in(frame_index).collect();
 
     let complete: Vec<_> = starting
         .iter()
@@ -160,7 +200,7 @@ fn frame_packets_page(stream: &FrameStream, frame_index: usize) -> PageModel {
         .count();
     let mut summary = format!(
         "{} \u{2014} {} Space Packet(s) starting in this frame",
-        stream.source,
+        source,
         complete.len()
     );
     if continued > 0 {
@@ -170,10 +210,7 @@ fn frame_packets_page(stream: &FrameStream, frame_index: usize) -> PageModel {
     }
 
     PageModel {
-        heading: Some((
-            format!("TM Transfer Frame {}", frame.identification()),
-            frame_href(frame_index),
-        )),
+        heading: Some((frame_title, frame_href(frame_index))),
         summary,
         boxes: complete
             .iter()

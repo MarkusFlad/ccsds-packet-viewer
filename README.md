@@ -1,10 +1,11 @@
-# CCSDS Space Packet & TM Frame Viewer
+# CCSDS Space Packet, TM & TC Frame Viewer
 
 A command line application written entirely in Rust that reads a stream of
 [CCSDS Space Packets](https://public.ccsds.org/Pubs/133x0b2e2.pdf)
-(CCSDS 133.0-B-2) or of
+(CCSDS 133.0-B-2), of
 [CCSDS TM Transfer Frames](https://public.ccsds.org/Pubs/132x0b3.pdf)
-(CCSDS 132.0-B-3) from a hex text file and shows them in the web browser.
+(CCSDS 132.0-B-3) or of CCSDS TC Transfer Frames (CCSDS 232.0-B-4) from a
+hex text file and shows them in the web browser.
 The kind of input is selected with `--mode`.
 The interactive parts of the web interface are implemented in Rust and
 compiled to WebAssembly.
@@ -102,12 +103,13 @@ must be given with `--frame-length`.
 
 ### Space Data Link Security Protocol (`--sdls-header`)
 
-Frames protected by the
+TM frames protected by the
 [Space Data Link Security Protocol](https://public.ccsds.org/Pubs/355x0b2.pdf)
 (CCSDS 355.0-B-2) carry a *Security Header* directly in front of the
 Transfer Frame Data Field (after the Secondary Header, if there is one) and
 optionally a *Security Trailer* directly behind it (in front of OCF and
-FECF):
+FECF). In TC frames the Security Header follows the Segment Header (if
+there is one) and the Security Trailer precedes the FECF:
 
 | Part | Length | Content according to CCSDS 355.0-B-2 |
 |------|--------|--------------------------------------|
@@ -137,7 +139,7 @@ A frame is considered valid if
    the frame, if `--fecf` is given. With `--ignore-crc` frames with a wrong
    FECF are displayed anyway (marked *CRC error* in the detail view).
 
-### Space Packets inside the frames
+### Space Packets inside the TM frames
 
 The Space Packets contained in the data fields are reassembled per virtual
 channel (Spacecraft ID + Virtual Channel ID), also when a packet (or even
@@ -168,13 +170,89 @@ packet in progress, or the end of the stream. Data before the next First
 Header Pointer is marked as not assigned; idle frames (First Header Pointer
 `0x7fe`) are marked as idle data.
 
+## TC Transfer Frames (`--mode tc-frames`)
+
+TC frames are displayed in the same way as TM frames:
+
+- **Overview**: title `TC Transfer Frame SCID=42 VCID=1` and the top level
+  parts of the frame as hex bytes: *Transfer Frame Primary Header*,
+  *Segment Header* (only with `--segment-header`), *Security Header* (only
+  with `--sdls-header`), *Transfer Frame Data Field*, *Security Trailer*
+  (only with `--sdls-trailer`) and *Frame Error Control Field* (only with
+  `--fecf`).
+- **Detail view** on mouse over, pinned by a click:
+
+  | Part | Fields |
+  |------|--------|
+  | Primary Header | Version Number, Bypass Flag, Control Command Flag, Reserved Spare, Spacecraft Identifier, Virtual Channel Identifier, Frame Length, Frame Sequence Number |
+  | Segment Header | Sequence Flags, Multiplexer Access Point Identifier |
+  | Security Header | hex bytes |
+  | Data Field | hex bytes |
+  | Security Trailer | hex bytes |
+  | Frame Error Control Field | value with *CRC ok* or *CRC error* |
+
+  The flags are annotated with the frame type (*Type-A*/*Type-B*,
+  *Type-D*/*Type-C*), the Frame Length with the total number of octets and
+  the Sequence Flags with their meaning (*first segment*, *continuing
+  segment*, *last segment*, *unsegmented*).
+- **Invalid data**: the first invalid frame is shown as a red frame with the
+  text `No valid Frame-Data`.
+
+The length of a TC frame is contained in its primary header, so
+`--frame-length` is not used. `--asm` is not available either: the CLTU
+layer (start sequence, BCH code blocks) is not decoded, the file has to
+contain the plain Transfer Frames.
+
+| Part | How its presence is determined |
+|------|--------------------------------|
+| Segment Header | `--segment-header` (managed parameter) |
+| Security Header | `--sdls-header <OCTETS>` (managed parameter) |
+| Security Trailer | `--sdls-trailer <OCTETS>` (managed parameter) |
+| Frame Error Control Field | `--fecf` (managed parameter) |
+
+These settings are applied to every frame of the file that carries data.
+Frames with control commands (Control Command Flag 1, *BC* frames) are
+decoded without Segment Header and without security fields; the control
+commands *Unlock* and *Set V(R)* are named in the tooltip of the data field.
+
+A frame is considered valid if
+
+1. at least 5 octets (the Transfer Frame Primary Header) are available,
+2. the Transfer Frame Version Number is `0` (binary `00`),
+3. the complete frame (`Frame Length + 1` octets) is available,
+4. Segment Header, security fields and FECF leave room for at least one
+   data octet, and
+5. the FECF matches the CRC computed over the frame, if `--fecf` is given
+   (`--ignore-crc` works as for TM frames).
+
+### Space Packets inside the TC frames
+
+Hover, click, packet links and the packet page (`#/frame/<n>/packets`) work
+as described for TM frames. The packets are found as follows:
+
+- **Without Segment Header** every data field contains one or more complete
+  packets.
+- **With Segment Header** the Sequence Flags decide: *unsegmented* frames
+  contain complete packets; a *first segment* starts a packet that is
+  continued by the following *continuing* and *last* segments of the same
+  Multiplexer Access Point (Spacecraft ID + Virtual Channel ID + MAP ID).
+  Frames of other MAPs may lie in between.
+
+The reassembly of a packet is interrupted (it is then shown as
+`No valid Packet-Data` on its packet page) by a gap in the Frame Sequence
+Number of the sequence controlled (*AD*) frames of the virtual channel, a
+frame with a FECF mismatch (`--ignore-crc`), a new packet start or a *last
+segment* before the packet is complete, or the end of the stream. A packet
+that does not fit into an unsegmented data field is reported in the same
+way.
+
 ## Project structure
 
 ```text
 ccsds-packet-viewer/
 ├── Cargo.toml                  workspace
 ├── crates/
-│   ├── ccsds-common/           packet and TM frame models, parsers, CRC, packet
+│   ├── ccsds-common/           packet, TM and TC frame models, parsers, CRC, packet
 │   │                           extraction from frames, hex formatting (+ unit tests)
 │   ├── ccsds-viewer/           CLI binary: reads the file, serves the web UI
 │   └── ccsds-web/              WebAssembly frontend: renders overview + detail view
@@ -183,7 +261,8 @@ ccsds-packet-viewer/
 │           ├── pages.rs        URL hash routes and page models
 │           ├── layout.rs       generic view model + rendering of framed views
 │           ├── packet_view.rs  Space Packet -> view model
-│           └── frame_view.rs   TM Transfer Frame -> view model
+│           ├── frame_view.rs   TM Transfer Frame -> view model
+│           └── tc_frame_view.rs  TC Transfer Frame -> view model
 ├── web/
 │   ├── index.html              page skeleton + 2-line WebAssembly loader
 │   ├── style.css               frames and layout
@@ -197,8 +276,14 @@ ccsds-packet-viewer/
     ├── tm_frames_asm.txt       3 TM frames (48 octets, OCF) each preceded by an ASM
     ├── tm_frames_sdls.txt      3 TM frames (96 octets, OCF, FECF) with Security
     │                           Header (6 octets) and Security Trailer (16 octets)
-    └── tm_frames_max.txt       3 TM frames of the maximum length (2048 octets,
-                                OCF, FECF) with packets of up to 1500 data octets
+    ├── tm_frames_max.txt       3 TM frames of the maximum length (2048 octets,
+    │                           OCF, FECF) with packets of up to 1500 data octets
+    ├── tc_frames.txt           8 TC frames (Segment Header, FECF; control commands,
+    │                           segmented packet) followed by a frame with a CRC error
+    ├── tc_frames_sdls.txt      4 TC frames (FECF) with Security Header (6 octets)
+    │                           and Security Trailer (16 octets)
+    └── tc_frames_max.txt       3 TC frames of the maximum length (1024 octets,
+                                Segment Header, FECF)
 ```
 
 `ccsds-common` is used by both the native CLI and the WebAssembly frontend,
@@ -236,6 +321,11 @@ cargo run --release -p ccsds-viewer -- --mode tm-frames --frame-length 96 --fecf
 
 # ... or with TM Transfer Frames of the maximum length of 2048 octets
 cargo run --release -p ccsds-viewer -- --mode tm-frames --frame-length 2048 --fecf data/tm_frames_max.txt
+
+# ... or with TC Transfer Frames
+cargo run --release -p ccsds-viewer -- --mode tc-frames --segment-header --fecf data/tc_frames.txt
+cargo run --release -p ccsds-viewer -- --mode tc-frames --fecf --sdls-header 6 --sdls-trailer 16 data/tc_frames_sdls.txt
+cargo run --release -p ccsds-viewer -- --mode tc-frames --segment-header --fecf data/tc_frames_max.txt
 ```
 
 Then open <http://127.0.0.1:8080/> in the browser.
@@ -250,18 +340,20 @@ Arguments:
 
 Options:
   -m, --mode <MODE>               Kind of data in the input file [default: packets]
-                                  [possible values: packets, tm-frames]
+                                  [possible values: packets, tm-frames, tc-frames]
   -l, --frame-length <OCTETS>     TM frames: total length of every Transfer Frame in
                                   octets (without Attached Sync Marker). Required with
                                   `--mode tm-frames`
-      --fecf                      TM frames: every frame ends with a 2 octet Frame
+      --fecf                      Frames: every frame ends with a 2 octet Frame
                                   Error Control Field
-      --ignore-crc                TM frames: show frames with a wrong FECF instead of
+      --ignore-crc                Frames: show frames with a wrong FECF instead of
                                   treating them as invalid
       --asm[=<HEX>]               TM frames: every frame is preceded by an Attached
                                   Sync Marker. Without a value the standard marker
                                   1acffc1d is used
-      --sdls-header <OCTETS>      TM frames: every frame carries a Security Header of
+      --segment-header            TC frames: every frame carrying data starts its data
+                                  field with a 1 octet Segment Header
+      --sdls-header <OCTETS>      Frames: every frame carries a Security Header of
                                   the Space Data Link Security Protocol with this
                                   length (at least 2 octets)
       --sdls-trailer <OCTETS>     SDLS: length of the Security Trailer. Without this
@@ -300,8 +392,60 @@ tm_frames.txt: 6 valid TM frame(s)
   first invalid item at byte offset 384: Frame Error Control Field 0x6e16 does not match computed CRC 0xfca4
 ```
 
-The frame options are only accepted together with `--mode tm-frames`,
-`--sdls-trailer` and `--sdls-encrypted` only together with `--sdls-header`.
+The frame options are only accepted together with `--mode tm-frames` or
+`--mode tc-frames` (`--frame-length` and `--asm` only for TM frames,
+`--segment-header` only for TC frames), `--sdls-trailer` and
+`--sdls-encrypted` only together with `--sdls-header`.
+
+## Delivery
+
+The tool is delivered as one executable plus the directory with the web
+assets. Neither Rust nor wasm-pack is needed on the target computer, only a
+web browser.
+
+1. Build both parts in release mode on a computer with the same operating
+   system and processor architecture as the target computer:
+
+   ```sh
+   wasm-pack build crates/ccsds-web --target web --release --out-dir ../../web/pkg --no-typescript
+   cargo build --release -p ccsds-viewer
+   ```
+
+2. Copy these files into the delivery, keeping the layout of the `web`
+   directory:
+
+   ```text
+   ccsds-viewer/
+   ├── ccsds-viewer                from target/release/ (ccsds-viewer.exe on Windows)
+   └── web/
+       ├── index.html              from web/
+       ├── style.css               from web/
+       └── pkg/
+           ├── ccsds_web.js        from web/pkg/
+           └── ccsds_web_bg.wasm   from web/pkg/
+   ```
+
+   | File | Needed | Purpose |
+   |------|--------|---------|
+   | `ccsds-viewer` | yes | command line application and web server |
+   | `web/index.html`, `web/style.css` | yes | page skeleton and layout |
+   | `web/pkg/ccsds_web.js`, `web/pkg/ccsds_web_bg.wasm` | yes | WebAssembly frontend and its loader |
+   | `web/pkg/package.json`, `web/pkg/.gitignore` | no | only written by wasm-pack for npm |
+   | `README.md`, `data/*.txt` | optional | documentation and example files |
+
+3. On the target computer always pass the web directory with `--web-root`.
+   The built-in default is the absolute path of the `web` directory on the
+   computer where the tool was built and does not exist elsewhere:
+
+   ```sh
+   ./ccsds-viewer --web-root ./web <INPUT>
+   ```
+
+The Linux executable is linked dynamically against the C library (glibc)
+of the build computer; it runs on systems with the same or a newer glibc
+version. The web server only listens on `127.0.0.1` unless `--bind` is
+given, and the browser needs no internet access: all assets are served by
+the tool itself.
 
 ## Input file format
 
@@ -326,7 +470,7 @@ ends at that token; the packet affected by it is reported as invalid.
 | Path            | Content                                    |
 |-----------------|--------------------------------------------|
 | `/`             | `web/index.html`                           |
-| `/api/stream`   | the parsed stream (packets or TM frames) as JSON |
+| `/api/stream`   | the parsed stream (packets, TM or TC frames) as JSON |
 | `/<file>`       | static files from the web root             |
 
 ## Tests
