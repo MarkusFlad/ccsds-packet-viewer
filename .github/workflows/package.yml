@@ -1,0 +1,75 @@
+# Builds the delivery package (see "Delivery" in README.md) and stores it as
+# a workflow artifact. For a version tag (e.g. v0.1.0) the package is also
+# published as a GitHub release, where it is kept permanently.
+name: Package
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the Rust toolchain and targets
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add wasm32-unknown-unknown x86_64-unknown-linux-musl
+
+      - name: Cache wasm-pack
+        id: wasm-pack
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/wasm-pack
+          key: wasm-pack-${{ runner.os }}
+
+      - name: Install wasm-pack
+        if: steps.wasm-pack.outputs.cache-hit != 'true'
+        run: cargo install wasm-pack --locked
+
+      - name: Check the WebAssembly frontend
+        run: cargo check -p ccsds-web --target wasm32-unknown-unknown
+
+      - name: Test, build and package
+        run: ./package.sh
+
+      - name: Upload the package
+        uses: actions/upload-artifact@v4
+        with:
+          name: ccsds-viewer-linux-x86_64
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download the package
+        uses: actions/download-artifact@v4
+        with:
+          name: ccsds-viewer-linux-x86_64
+          path: dist
+
+      - name: Check that the tag matches the version of the package
+        run: test -f "dist/ccsds-viewer-${GITHUB_REF_NAME#v}-linux-x86_64.tar.gz"
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "$GITHUB_REF_NAME" dist/*.tar.gz
+          --repo "$GITHUB_REPOSITORY"
+          --title "$GITHUB_REF_NAME"
+          --generate-notes

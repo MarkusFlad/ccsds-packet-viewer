@@ -425,7 +425,19 @@ rustup target add x86_64-unknown-linux-musl
 The GitHub workflow `.github/workflows/package.yml` runs the same script on
 every push to `main`, on pull requests and when started manually. The
 archive can be downloaded from the workflow run under *Artifacts*
-(`ccsds-viewer-linux-x86_64`).
+(`ccsds-viewer-linux-x86_64`); GitHub deletes these artifacts after some
+time.
+
+To publish a release, set the version in `Cargo.toml`, commit, and push a
+tag with the same version:
+
+```sh
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The workflow then builds the package and attaches it to a new GitHub
+release with that name. Release files are kept permanently.
 
 Content of the archive:
 
