@@ -195,8 +195,10 @@ ccsds-packet-viewer/
     ├── tm_frames.txt           6 TM frames (64 octets, FECF; OCF, secondary header,
     │                           idle frame) followed by a frame with a CRC error
     ├── tm_frames_asm.txt       3 TM frames (48 octets, OCF) each preceded by an ASM
-    └── tm_frames_sdls.txt      3 TM frames (96 octets, OCF, FECF) with Security
-                                Header (6 octets) and Security Trailer (16 octets)
+    ├── tm_frames_sdls.txt      3 TM frames (96 octets, OCF, FECF) with Security
+    │                           Header (6 octets) and Security Trailer (16 octets)
+    └── tm_frames_max.txt       3 TM frames of the maximum length (2048 octets,
+                                OCF, FECF) with packets of up to 1500 data octets
 ```
 
 `ccsds-common` is used by both the native CLI and the WebAssembly frontend,
@@ -231,6 +233,9 @@ cargo run --release -p ccsds-viewer -- --mode tm-frames --frame-length 48 --asm 
 
 # ... or with TM Transfer Frames with Security Header and Security Trailer
 cargo run --release -p ccsds-viewer -- --mode tm-frames --frame-length 96 --fecf --sdls-header 6 --sdls-trailer 16 data/tm_frames_sdls.txt
+
+# ... or with TM Transfer Frames of the maximum length of 2048 octets
+cargo run --release -p ccsds-viewer -- --mode tm-frames --frame-length 2048 --fecf data/tm_frames_max.txt
 ```
 
 Then open <http://127.0.0.1:8080/> in the browser.
