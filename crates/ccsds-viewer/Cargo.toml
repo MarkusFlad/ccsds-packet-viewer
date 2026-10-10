@@ -1,0 +1,12 @@
+[package]
+name = "ccsds-viewer"
+description = "Command line application serving a web view of CCSDS Space Packets"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+ccsds-common = { path = "../ccsds-common" }
+serde_json.workspace = true
+clap = { version = "4", features = ["derive"] }
+tiny_http = "0.12"

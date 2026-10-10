@@ -1,0 +1,158 @@
+/* CCSDS Space Packet Viewer - styles for overview and detail view.
+ *
+ * Frames are drawn with the "grid gap" technique: a grid container has the
+ * line color as background and 1px gaps, every cell has the page background.
+ * The visible gaps form the rectangles around all titles and values.
+ */
+
+:root {
+  --bg: #ffffff;
+  --page: #f4f5f7;
+  --text: #1c1f24;
+  --muted: #5f6672;
+  --line: #2f3a4a;
+  --title-bg: #dfe7f2;
+  --section-bg: #eef2f8;
+  --group-bg: #f6f8fb;
+  --error: #c62828;
+  --error-bg: #fdecea;
+  --shadow: 0 10px 30px rgba(20, 30, 50, 0.28);
+  --mono: ui-monospace, "SFMono-Regular", "Cascadia Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1b1f26;
+    --page: #12151a;
+    --text: #e3e7ee;
+    --muted: #9aa3b2;
+    --line: #8b9bb3;
+    --title-bg: #2b3646;
+    --section-bg: #232c39;
+    --group-bg: #1f2630;
+    --error: #ef5350;
+    --error-bg: #3a1d1d;
+    --shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 16px 20px 40px;
+  background: var(--page);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 14px;
+}
+
+.page-header h1 { margin: 0 0 4px; font-size: 1.3rem; }
+.summary { margin: 0 0 16px; color: var(--muted); }
+.summary.error { color: var(--error); font-weight: 600; }
+
+/* ---------- Overview ---------- */
+
+.packets {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.packet,
+.detail {
+  display: grid;
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+}
+
+.packet {
+  grid-template-columns: auto auto;
+  cursor: default;
+}
+
+.packet:hover { outline: 2px solid var(--line); outline-offset: 1px; }
+
+.cell {
+  background: var(--bg);
+  padding: 4px 8px;
+  text-align: center;
+}
+
+.packet-title {
+  grid-column: 1 / -1;
+  background: var(--title-bg);
+  font-weight: 700;
+}
+
+.section-title {
+  background: var(--section-bg);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.hex {
+  font-family: var(--mono);
+  text-align: left;
+}
+
+.header-hex { white-space: nowrap; }
+
+/* 16 bytes per line: 16 * "xx " minus the last space = 47 characters. */
+.data-hex {
+  box-sizing: content-box;
+  max-width: 47ch;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+/* First invalid packet */
+.invalid {
+  border: 2px solid var(--error);
+  background: var(--error-bg);
+  color: var(--error);
+  padding: 10px 14px;
+  max-width: 40rem;
+}
+.invalid-title { font-weight: 700; font-size: 1.05rem; }
+.invalid-reason { margin-top: 4px; font-size: 0.85rem; }
+
+/* ---------- Detail view ---------- */
+
+.detail-popup {
+  position: absolute;
+  z-index: 1000;
+  /* The popup must not take the mouse away from the packet below it. */
+  pointer-events: none;
+  /* Keep the natural width even close to the right window edge. */
+  width: max-content;
+  box-shadow: var(--shadow);
+}
+.detail-popup[hidden] { display: none; }
+
+.detail {
+  grid-template-columns: repeat(7, minmax(5.5rem, max-content)) minmax(8rem, max-content);
+}
+
+.detail .cell {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.group-title { background: var(--group-bg); font-weight: 600; }
+.group-value { font-family: var(--mono); }
+
+.field-name {
+  font-size: 0.85rem;
+  max-width: 9rem;
+  line-height: 1.25;
+}
+
+.field-value { font-family: var(--mono); gap: 2px; }
+.field-value .hexval { color: var(--muted); }
+
+.detail .data-hex { justify-content: center; }

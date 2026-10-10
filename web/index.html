@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CCSDS Packet Viewer</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="page-header">
+    <h1>CCSDS Space Packet Viewer</h1>
+    <p id="summary" class="summary">Loading packets&hellip;</p>
+  </header>
+
+  <!-- Filled by the WebAssembly module (crates/ccsds-web). -->
+  <main id="packets" class="packets"></main>
+
+  <!-- The only hand written JavaScript: browsers can only instantiate a
+       WebAssembly module from JavaScript. Everything else runs in Rust. -->
+  <script type="module">
+    import init from "./pkg/ccsds_web.js";
+    init();
+  </script>
+  <noscript>This viewer needs JavaScript enabled to load its WebAssembly module.</noscript>
+</body>
+</html>

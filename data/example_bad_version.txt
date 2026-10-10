@@ -1,0 +1,19 @@
+# CCSDS Space Packets as hex bytes, separated by whitespace.
+# Everything after '#' is a comment and ignored by ccsds-viewer.
+
+# TM, APID=47, housekeeping report (PUS-style secondary header)
+08 2f c0 01 00 0f 20 03 19 00 01 00 00 12 34 56
+01 a4 0b b8 7f 00
+
+# TM, APID=47, second report
+08 2f c0 02 00 03 de ad be ef
+
+# TC, APID=100, telecommand
+18 64 c0 05 00 07 21 11 01 00 2a 00 00 01
+
+# Packet Version Number 1 is not valid -> stream display stops here.
+20 0a c0 00 00 02 01 02 03
+
+# Valid packet after the invalid one: not shown.
+08 2f c0 01 00 0f 20 03 19 00 01 00 00 12 34 56
+01 a4 0b b8 7f 00

@@ -1,0 +1,9 @@
+[package]
+name = "ccsds-common"
+description = "CCSDS Space Packet model, parser and formatting helpers shared by CLI and web frontend"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
