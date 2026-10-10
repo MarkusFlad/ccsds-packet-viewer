@@ -252,6 +252,7 @@ way.
 ccsds-packet-viewer/
 ├── Cargo.toml                  workspace
 ├── package.sh                  builds the delivery archive in dist/
+├── .github/workflows/          GitHub workflow running package.sh
 ├── USAGE.md                    user guide delivered with the tool
 ├── crates/
 │   ├── ccsds-common/           packet, TM and TC frame models, parsers, CRC, packet
@@ -420,6 +421,11 @@ target for static linking:
 ```sh
 rustup target add x86_64-unknown-linux-musl
 ```
+
+The GitHub workflow `.github/workflows/package.yml` runs the same script on
+every push to `main`, on pull requests and when started manually. The
+archive can be downloaded from the workflow run under *Artifacts*
+(`ccsds-viewer-linux-x86_64`).
 
 Content of the archive:
 
