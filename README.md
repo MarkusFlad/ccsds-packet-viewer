@@ -411,17 +411,21 @@ needed on the target computer, only a web browser.
 
 The script runs the tests, builds the WebAssembly frontend and the viewer in
 release mode and writes
-`dist/ccsds-viewer-<version>-<platform>.tar.gz`, for example
-`dist/ccsds-viewer-0.1.0-linux-x86_64.tar.gz`. Run it on a
-computer with the same operating system and processor architecture as the
-target computer. It needs `bash` and `tar` in addition to the
-[prerequisites](#prerequisites).
+`dist/ccsds-viewer-<version>-linux-<architecture>.tar.gz`, for example
+`dist/ccsds-viewer-0.1.0-linux-x86_64.tar.gz`. Run it on a Linux computer
+with the same processor architecture as the target computer. In addition
+to the [prerequisites](#prerequisites) it needs `bash`, `tar` and the Rust
+target for static linking:
+
+```sh
+rustup target add x86_64-unknown-linux-musl
+```
 
 Content of the archive:
 
 ```text
 ccsds-viewer-<version>/
-├── ccsds-viewer                from target/release/
+├── ccsds-viewer                from target/<architecture>-unknown-linux-musl/release/
 ├── USAGE.md                    user guide, from USAGE.md
 ├── web/
 │   ├── index.html              from web/
@@ -442,7 +446,7 @@ absolute path of the `web` directory on the computer where the tool was
 built and does not exist elsewhere:
 
 ```sh
-tar -xzf ccsds-viewer-<version>-<platform>.tar.gz
+tar -xzf ccsds-viewer-<version>-linux-<architecture>.tar.gz
 cd ccsds-viewer-<version>
 ./ccsds-viewer --web-root ./web examples/example.txt
 ```
@@ -450,9 +454,10 @@ cd ccsds-viewer-<version>
 `USAGE.md` describes the use of the delivered tool for its users; keep it
 up to date when options change.
 
-The Linux executable is linked dynamically against the C library (glibc)
-of the build computer; it runs on systems with the same or a newer glibc
-version. The web server only listens on `127.0.0.1` unless `--bind` is
+The delivered executable is built for the musl target and linked
+statically. It does not depend on the C library (glibc) of the target
+computer and runs on any Linux system with the same processor
+architecture. The web server only listens on `127.0.0.1` unless `--bind` is
 given, and the browser needs no internet access: all assets are served by
 the tool itself.
 

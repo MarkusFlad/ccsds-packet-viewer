@@ -3,7 +3,7 @@
 The viewer reads a text file with hex bytes containing CCSDS Space Packets,
 CCSDS TM Transfer Frames or CCSDS TC Transfer Frames and shows them in the
 web browser. Nothing has to be installed: the tool brings its own small web
-server, and the browser needs no internet access.
+server, and the browser needs no internet access. The tool runs on Linux.
 
 ## Contents of this package
 
@@ -137,4 +137,3 @@ shown as hex bytes, nothing is verified or decrypted.
 | `--frame-length is required with --mode tm-frames` | Add `--frame-length <OCTETS>`. |
 | The page stays at "Loading data..." | The `web/pkg` directory is missing or incomplete. Unpack the package again. |
 | Red box right at the beginning | The options do not match the file (wrong mode or frame length, missing `--fecf`, `--asm`, `--segment-header` or `--sdls-header`). |
-| The tool does not start (`GLIBC_... not found`) | The package was built for a newer Linux system. Ask for a package built for your system. |
