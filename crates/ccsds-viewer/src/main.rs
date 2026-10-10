@@ -12,7 +12,8 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use ccsds_common::{
-    format_hex_bytes, parse_hex_text, FrameStream, PacketStream, Stream, TmFrameConfig, DEFAULT_ASM,
+    format_hex_bytes, parse_hex_text, FrameStream, PacketStream, SdlsConfig, Stream, TmFrameConfig,
+    DEFAULT_ASM,
 };
 use clap::{Parser, ValueEnum};
 
@@ -65,6 +66,26 @@ struct Cli {
     )]
     asm: Option<String>,
 
+    /// TM frames: every frame carries a Security Header of the Space Data
+    /// Link Security Protocol with this length (at least 2 octets).
+    #[arg(long, value_name = "OCTETS")]
+    sdls_header: Option<usize>,
+
+    /// SDLS: length of the Security Trailer. Without this option the frames
+    /// have no Security Trailer.
+    #[arg(
+        long,
+        value_name = "OCTETS",
+        default_value_t = 0,
+        requires = "sdls_header"
+    )]
+    sdls_trailer: usize,
+
+    /// SDLS: the Transfer Frame Data Field is encrypted, do not extract
+    /// Space Packets from it.
+    #[arg(long, requires = "sdls_header")]
+    sdls_encrypted: bool,
+
     /// TCP port of the web server.
     #[arg(short, long, default_value_t = 8080)]
     port: u16,
@@ -101,6 +122,11 @@ impl Cli {
             fecf_present: self.fecf,
             check_crc: !self.ignore_crc,
             asm,
+            sdls: self.sdls_header.map(|header_length| SdlsConfig {
+                header_length,
+                trailer_length: self.sdls_trailer,
+                encrypted: self.sdls_encrypted,
+            }),
         };
         config.validate()?;
         Ok(config)
@@ -108,11 +134,15 @@ impl Cli {
 
     /// Rejects frame options when reading Space Packets.
     fn check_packet_options(&self) -> Result<(), String> {
-        let frame_options_used =
-            self.frame_length.is_some() || self.fecf || self.ignore_crc || self.asm.is_some();
+        let frame_options_used = self.frame_length.is_some()
+            || self.fecf
+            || self.ignore_crc
+            || self.asm.is_some()
+            || self.sdls_header.is_some();
         if frame_options_used {
             return Err(
-                "--frame-length, --fecf, --ignore-crc and --asm require --mode tm-frames".into(),
+                "--frame-length, --fecf, --ignore-crc, --asm and --sdls-header require --mode tm-frames"
+                    .into(),
             );
         }
         Ok(())
@@ -225,17 +255,29 @@ fn print_summary(stream: &Stream, verbose: bool) {
                         .as_ref()
                         .map(|sec| format!("  secondary: {}", format_hex_bytes(&sec.bytes)))
                         .unwrap_or_default();
+                    let security_header = frame
+                        .security_header
+                        .as_ref()
+                        .map(|sec| format!("  security header: {}", format_hex_bytes(sec)))
+                        .unwrap_or_default();
+                    let security_trailer = frame
+                        .security_trailer
+                        .as_ref()
+                        .map(|sec| format!("  security trailer: {}", format_hex_bytes(sec)))
+                        .unwrap_or_default();
                     let crc = match frame.fecf {
                         Some(fecf) if !fecf.is_ok() => "  (FECF mismatch)",
                         _ => "",
                     };
                     println!(
-                        "  @{:<6} {:<35} header: {}{}  data: {} octets  trailer: {}{}",
+                        "  @{:<6} {:<35} header: {}{}{}  data: {} octets{}  trailer: {}{}",
                         frame.offset,
                         frame.title(),
                         format_hex_bytes(&frame.header_bytes),
                         secondary,
+                        security_header,
                         frame.data.len(),
+                        security_trailer,
                         format_hex_bytes(&frame.trailer_bytes),
                         crc
                     );
@@ -244,7 +286,13 @@ fn print_summary(stream: &Stream, verbose: bool) {
         }
     }
 
-    if let Stream::TmFrames(frames) = stream {
+    let encrypted = matches!(
+        stream,
+        Stream::TmFrames(frames) if matches!(&frames.config.sdls, Some(sdls) if sdls.encrypted)
+    );
+    if encrypted {
+        println!("  frame data fields are encrypted, no Space Packets extracted");
+    } else if let Stream::TmFrames(frames) = stream {
         let extraction = &frames.extraction;
         println!(
             "  {} Space Packet(s) extracted from the frame data fields",
@@ -299,6 +347,36 @@ mod tests {
     fn frame_options_rejected_for_packets() {
         let cli = Cli::parse_from(["ccsds-viewer", "--fecf", "x.txt"]);
         assert!(cli.check_packet_options().is_err());
+    }
+
+    #[test]
+    fn sdls_options_build_the_security_config() {
+        let cli = Cli::parse_from([
+            "ccsds-viewer",
+            "-m",
+            "tm-frames",
+            "-l",
+            "96",
+            "--sdls-header",
+            "6",
+            "--sdls-trailer",
+            "16",
+            "x.txt",
+        ]);
+        assert_eq!(
+            cli.frame_config().unwrap().sdls,
+            Some(SdlsConfig {
+                header_length: 6,
+                trailer_length: 16,
+                encrypted: false,
+            })
+        );
+
+        let plain = Cli::parse_from(["ccsds-viewer", "-m", "tm-frames", "-l", "96", "x.txt"]);
+        assert_eq!(plain.frame_config().unwrap().sdls, None);
+
+        let without_header = Cli::try_parse_from(["ccsds-viewer", "--sdls-trailer", "16", "x.txt"]);
+        assert!(without_header.is_err());
     }
 
     #[test]

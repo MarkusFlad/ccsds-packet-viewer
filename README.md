@@ -63,8 +63,10 @@ TM frames are displayed in the same way as Space Packets:
 
 - **Overview**: title `TM Transfer Frame SCID=42 VCID=1` and the top level
   parts of the frame as hex bytes: *Transfer Frame Primary Header*,
-  *Transfer Frame Secondary Header* (only if present), *Transfer Frame Data
-  Field* and *Transfer Frame Trailer* (only if OCF and/or FECF are present).
+  *Transfer Frame Secondary Header* (only if present), *Security Header*
+  (only with `--sdls-header`), *Transfer Frame Data Field*, *Security Trailer*
+  (only with `--sdls-trailer`) and *Transfer Frame Trailer* (only if OCF and/or
+  FECF are present).
 - **Detail view** on mouse over, with the same row structure as for packets
   (title, parts, group titles, group values in hex, field names, values):
 
@@ -72,7 +74,9 @@ TM frames are displayed in the same way as Space Packets:
   |------|-------------------|--------|
   | Primary Header | *Master Channel Identifier*, *Transfer Frame Data Field Status* | Version Number, Spacecraft Identifier, Virtual Channel Identifier, OCF Flag, Master/Virtual Channel Frame Count, Secondary Header Flag, Synchronization Flag, Packet Order Flag, Segment Length Identifier, First Header Pointer |
   | Secondary Header | *Transfer Frame Secondary Header Identification* | Version Number, Length, Secondary Header Data Field |
+  | Security Header | | hex bytes |
   | Data Field | | hex bytes |
+  | Security Trailer | | hex bytes |
   | Trailer | | Operational Control Field, Frame Error Control Field |
 
   The First Header Pointer values `0x7ff` (no packet start) and `0x7fe`
@@ -88,18 +92,47 @@ TM frames are displayed in the same way as Space Packets:
 |------|--------------------------------|
 | Attached Sync Marker before every frame | `--asm` (standard marker `1acffc1d`) or `--asm=<HEX>` |
 | Transfer Frame Secondary Header | *Secondary Header Flag* in the primary header; length from its identification octet |
+| Security Header | `--sdls-header <OCTETS>` (managed parameter) |
 | Operational Control Field | *OCF Flag* in the primary header |
+| Security Trailer | `--sdls-trailer <OCTETS>` (managed parameter) |
 | Frame Error Control Field | `--fecf` (managed parameter, not signalled in the frame) |
 
 The frame length is a managed parameter of the physical channel as well and
 must be given with `--frame-length`.
+
+### Space Data Link Security Protocol (`--sdls-header`)
+
+Frames protected by the
+[Space Data Link Security Protocol](https://public.ccsds.org/Pubs/355x0b2.pdf)
+(CCSDS 355.0-B-2) carry a *Security Header* directly in front of the
+Transfer Frame Data Field (after the Secondary Header, if there is one) and
+optionally a *Security Trailer* directly behind it (in front of OCF and
+FECF):
+
+| Part | Length | Content according to CCSDS 355.0-B-2 |
+|------|--------|--------------------------------------|
+| Security Header | `--sdls-header <OCTETS>` (at least 2) | Security Parameter Index (2 octets), optionally followed by Initialization Vector, Sequence Number and Pad Length |
+| Security Trailer | `--sdls-trailer <OCTETS>` | Message Authentication Code |
+
+Without `--sdls-trailer` the frames have no Security Trailer. Both lengths
+belong to the Security Association and are not contained in the frame. The
+same lengths are applied to every frame of the file. Both parts are shown
+as hex bytes; their content is not decoded into single fields.
+
+The viewer has no keys, so the Message Authentication Code is not verified
+and nothing is decrypted. With
+authentication only, the data field is clear text and the Space Packets are
+extracted as usual. If the data field is encrypted, pass `--sdls-encrypted`;
+the data field is then shown as plain hex bytes and no packets are
+extracted.
 
 A frame is considered valid if
 
 1. the Attached Sync Marker matches (if `--asm` is given),
 2. the complete frame (`--frame-length` octets) is available,
 3. the Transfer Frame Version Number is `0` (binary `00`),
-4. Secondary Header and trailer leave room for at least one data octet, and
+4. Secondary Header, security fields and trailer leave room for at least
+   one data octet, and
 5. the FECF matches the CRC (CRC-16-CCITT, preset `0xffff`) computed over
    the frame, if `--fecf` is given. With `--ignore-crc` frames with a wrong
    FECF are displayed anyway (marked *CRC error* in the detail view).
@@ -161,7 +194,9 @@ ccsds-packet-viewer/
     ├── example_bad_version.txt invalid Packet Version Number in the 4th packet
     ├── tm_frames.txt           6 TM frames (64 octets, FECF; OCF, secondary header,
     │                           idle frame) followed by a frame with a CRC error
-    └── tm_frames_asm.txt       3 TM frames (48 octets, OCF) each preceded by an ASM
+    ├── tm_frames_asm.txt       3 TM frames (48 octets, OCF) each preceded by an ASM
+    └── tm_frames_sdls.txt      3 TM frames (96 octets, OCF, FECF) with Security
+                                Header (6 octets) and Security Trailer (16 octets)
 ```
 
 `ccsds-common` is used by both the native CLI and the WebAssembly frontend,
@@ -193,6 +228,9 @@ cargo run --release -p ccsds-viewer -- data/example.txt
 # ... or with TM Transfer Frames
 cargo run --release -p ccsds-viewer -- --mode tm-frames --frame-length 64 --fecf data/tm_frames.txt
 cargo run --release -p ccsds-viewer -- --mode tm-frames --frame-length 48 --asm data/tm_frames_asm.txt
+
+# ... or with TM Transfer Frames with Security Header and Security Trailer
+cargo run --release -p ccsds-viewer -- --mode tm-frames --frame-length 96 --fecf --sdls-header 6 --sdls-trailer 16 data/tm_frames_sdls.txt
 ```
 
 Then open <http://127.0.0.1:8080/> in the browser.
@@ -218,6 +256,14 @@ Options:
       --asm[=<HEX>]               TM frames: every frame is preceded by an Attached
                                   Sync Marker. Without a value the standard marker
                                   1acffc1d is used
+      --sdls-header <OCTETS>      TM frames: every frame carries a Security Header of
+                                  the Space Data Link Security Protocol with this
+                                  length (at least 2 octets)
+      --sdls-trailer <OCTETS>     SDLS: length of the Security Trailer. Without this
+                                  option the frames have no Security Trailer
+                                  [default: 0]
+      --sdls-encrypted            SDLS: the Transfer Frame Data Field is encrypted, do
+                                  not extract Space Packets from it
   -p, --port <PORT>          TCP port of the web server [default: 8080]
   -b, --bind <BIND>          Address the web server binds to [default: 127.0.0.1]
       --web-root <WEB_ROOT>  Directory containing index.html, style.css and the
@@ -249,7 +295,8 @@ tm_frames.txt: 6 valid TM frame(s)
   first invalid item at byte offset 384: Frame Error Control Field 0x6e16 does not match computed CRC 0xfca4
 ```
 
-The frame options are only accepted together with `--mode tm-frames`.
+The frame options are only accepted together with `--mode tm-frames`,
+`--sdls-trailer` and `--sdls-encrypted` only together with `--sdls-header`.
 
 ## Input file format
 

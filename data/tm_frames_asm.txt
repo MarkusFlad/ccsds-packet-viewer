@@ -1,0 +1,22 @@
+# CCSDS TM Transfer Frames, each preceded by the Attached Sync Marker 1acffc1d.
+# Spacecraft ID 341, frame length 48 octets, OCF present, no FECF.
+# Run: ccsds-viewer --mode tm-frames --frame-length 48 --asm data/tm_frames_asm.txt
+
+# ASM + VC 0, frame 0, First Header Pointer 0
+1a cf fc 1d
+15 51 00 00 18 00 00 05 c0 00 00 09 00 01 02 03
+04 05 06 07 08 09 00 05 c0 01 00 1d 40 41 42 43
+44 45 46 47 48 49 4a 4b 4c 4d 4e 4f 01 00 00 00
+
+# ASM + VC 0, frame 1, First Header Pointer 14
+1a cf fc 1d
+15 51 01 01 18 0e 50 51 52 53 54 55 56 57 58 59
+5a 5b 5c 5d 00 06 c0 00 00 27 ee ee ee ee ee ee
+ee ee ee ee ee ee ee ee ee ee ee ee 01 00 00 01
+
+# ASM + VC 0, frame 2, First Header Pointer 22
+1a cf fc 1d
+15 51 02 02 18 16 ee ee ee ee ee ee ee ee ee ee
+ee ee ee ee ee ee ee ee ee ee ee ee 07 ff c0 00
+00 09 55 55 55 55 55 55 55 55 55 55 01 00 00 02
+

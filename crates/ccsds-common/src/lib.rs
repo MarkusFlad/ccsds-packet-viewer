@@ -31,7 +31,7 @@ pub mod stream;
 
 pub use extract::{extract_packets, DataSpan, ExtractedPacket, PacketExtraction, SpanKind};
 pub use frame::{
-    parse_frame_stream, Fecf, FrameStream, TmFrame, TmFrameConfig, TmPrimaryHeader,
+    parse_frame_stream, Fecf, FrameStream, SdlsConfig, TmFrame, TmFrameConfig, TmPrimaryHeader,
     TmSecondaryHeader, DEFAULT_ASM,
 };
 pub use hex::{format_hex_bytes, format_hex_value, parse_hex_text, HexParseError};
