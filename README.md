@@ -254,6 +254,7 @@ ccsds-packet-viewer/
 ├── package.sh                  builds the delivery archive in dist/
 ├── .github/workflows/          GitHub workflow running package.sh
 ├── USAGE.md                    user guide delivered with the tool
+├── LICENSE-MIT, LICENSE-APACHE license texts
 ├── crates/
 │   ├── ccsds-common/           packet, TM and TC frame models, parsers, CRC, packet
 │   │                           extraction from frames, hex formatting (+ unit tests)
@@ -445,6 +446,7 @@ Content of the archive:
 ccsds-viewer-<version>/
 ├── ccsds-viewer                from target/<architecture>-unknown-linux-musl/release/
 ├── USAGE.md                    user guide, from USAGE.md
+├── LICENSE-MIT, LICENSE-APACHE license texts
 ├── web/
 │   ├── index.html              from web/
 │   ├── style.css               from web/
@@ -519,4 +521,11 @@ of the default workspace members; check it with
 
 ## License
 
-MIT OR Apache-2.0
+Copyright (c) 2026 Markus Flad
+
+Licensed under either of
+
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE)), or
+- MIT license ([LICENSE-MIT](LICENSE-MIT))
+
+at your option.

@@ -12,6 +12,8 @@ ccsds-viewer        the tool (command line application and web server)
 web/                web interface, must stay next to the tool
 examples/           example input files
 USAGE.md            this guide
+LICENSE-MIT         license texts: the tool may be used under either of the
+LICENSE-APACHE      two licenses
 ```
 
 ## Quick start

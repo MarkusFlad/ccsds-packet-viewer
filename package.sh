@@ -4,7 +4,7 @@
 #   dist/ccsds-viewer-<version>-<platform>.tar.gz
 #
 # The archive contains the executable, the web assets, the example files and
-# the user guide (USAGE.md). See "Delivery" in README.md.
+# the user guide (USAGE.md) and the license texts. See "Delivery" in README.md.
 #
 # The executable is built for the musl target and therefore linked
 # statically: it does not depend on the C library of the target computer.
@@ -46,7 +46,7 @@ for file in data/*.txt; do
     sed -e '/^# Run: /s|ccsds-viewer |./ccsds-viewer --web-root ./web |' \
         -e '/^# Run: /s| data/| examples/|' "$file" > "$stage/examples/$(basename "$file")"
 done
-cp USAGE.md "$stage/"
+cp USAGE.md LICENSE-MIT LICENSE-APACHE "$stage/"
 
 echo "==> Writing $archive"
 tar -czf "$archive" -C target/package "$name"
